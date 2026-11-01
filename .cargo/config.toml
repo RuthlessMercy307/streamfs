@@ -1,7 +1,5 @@
-[build]
-target-dir = "C:/dev/sfs-target"
-
 [env]
+# bindgen (WinFsp bindings) needs libclang; default LLVM install location on Windows
 LIBCLANG_PATH = "C:/Program Files/LLVM/bin"
 
 [target.x86_64-unknown-linux-musl]
