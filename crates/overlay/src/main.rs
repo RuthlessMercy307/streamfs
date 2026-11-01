@@ -20,7 +20,7 @@ fn arg(name: &str) -> Option<String> {
 }
 
 const W: f32 = 300.0;
-const H: f32 = 340.0;
+const H: f32 = 362.0;
 const MARGIN: f32 = 16.0;
 
 /// One reading of the stats file.
@@ -71,6 +71,9 @@ struct App {
     stats: PathBuf,
     drive: String,
     visible: bool,
+    hwnd: isize,
+    last_alpha: i32,
+    last_top: Option<Instant>,
     _hk_mgr: GlobalHotKeyManager,
     hk_id: u32,
     cur: Sample,
@@ -99,14 +102,20 @@ impl App {
         }
         // processes: whatever runs from the mounted drive is "the game"; sfs-mount is the engine
         self.sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-        let prefix = format!("{}\\", self.drive.trim_end_matches(['\\', '/']).to_uppercase());
+        // Windows reports images on a WinFsp drive by device path (\Device\Volume{..}\...),
+        // not by drive letter, so accept both forms
+        let letter = self.drive.trim_end_matches(['\\', '/']).to_uppercase();
+        let mut prefixes = vec![format!("{letter}\\")];
+        if let Some(dev) = win::dos_device(&letter) {
+            prefixes.push(format!("{}\\", dev.to_uppercase()));
+        }
         let mut best: Option<(String, u64)> = None;
         let mut eng = 0;
         for p in self.sys.processes().values() {
             let mem = p.memory();
             if p.name().to_string_lossy().eq_ignore_ascii_case("sfs-mount.exe") {
                 eng += mem;
-            } else if p.exe().map(|e| e.to_string_lossy().to_uppercase().starts_with(&prefix)).unwrap_or(false)
+            } else if p.exe().map(|e| { let e = e.to_string_lossy().to_uppercase(); prefixes.iter().any(|x| e.starts_with(x.as_str())) }).unwrap_or(false)
                 && best.as_ref().map_or(true, |b| mem > b.1)
             {
                 best = Some((p.name().to_string_lossy().trim_end_matches(".exe").to_string(), mem));
@@ -146,7 +155,7 @@ fn secs(us: u64) -> String {
 
 impl eframe::App for App {
     fn clear_color(&self, _: &egui::Visuals) -> [f32; 4] {
-        [0.0, 0.0, 0.0, 0.0] // fully transparent outside the panel
+        [0.047, 0.047, 0.055, 1.0] // opaque panel; see-through comes from the window's alpha
     }
 
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
@@ -157,8 +166,12 @@ impl eframe::App for App {
         }
         self.poll();
         ctx.request_repaint_after(Duration::from_millis(250));
+        // Per-pixel transparency of an OpenGL window is not composited by every driver (the
+        // panel was invisible on an AMD card), so the window is opaque and DWM fades the
+        // whole window instead: alpha 0 = hidden (still click-through), ~85% = shown.
+        win::apply(&mut self.hwnd, if self.visible { 218 } else { 0 }, &mut self.last_alpha, &mut self.last_top);
         if !self.visible {
-            return; // window stays, but draws nothing and lets clicks through
+            return;
         }
 
         let c = &self.cur;
@@ -182,8 +195,7 @@ impl eframe::App for App {
         let bad = egui::Color32::from_rgb(240, 110, 100);
 
         let frame = egui::Frame::none()
-            .fill(egui::Color32::from_rgba_unmultiplied(12, 12, 14, 200))
-            .rounding(8.0)
+            .fill(egui::Color32::from_rgb(12, 12, 14))
             .inner_margin(egui::Margin::same(12.0));
         egui::CentralPanel::default().frame(egui::Frame::none()).show(ctx, |ui| {
             frame.show(ui, |ui| {
@@ -227,6 +239,9 @@ impl eframe::App for App {
                 row(ui, "RAM motor", gb(self.engine_ram), text);
                 // network failures are retried/raced by the engine; the game never sees them
                 row(ui, "Fallos de red / reintentos", format!("{} / {}", c.errors, c.retries), text);
+                // proof of life: when the game reads nothing new the other numbers stay still
+                let age = self.file_mtime.and_then(|m| m.elapsed().ok()).map_or("—".into(), |e| format!("hace {} s", e.as_secs()));
+                row(ui, "Datos del motor", age, dim);
                 if c.corrupt > 0 {
                     row(ui, "Bloques corruptos (descartados)", format!("{}", c.corrupt), bad);
                 }
@@ -256,7 +271,7 @@ fn main() -> eframe::Result<()> {
             .with_inner_size([W, H])
             .with_position([x, y])
             .with_decorations(false)
-            .with_transparent(true)
+            .with_transparent(false)
             .with_always_on_top()
             .with_mouse_passthrough(true)
             .with_taskbar(false)
@@ -281,6 +296,9 @@ fn main() -> eframe::Result<()> {
                 stats,
                 drive,
                 visible,
+                hwnd: 0,
+                last_alpha: -1,
+                last_top: None,
                 _hk_mgr: mgr,
                 hk_id: hk.id(),
                 cur: Sample::default(),
@@ -309,4 +327,73 @@ fn primary_size() -> (f32, f32) {
 #[cfg(not(windows))]
 fn primary_size() -> (f32, f32) {
     (1920.0, 1080.0)
+}
+
+/// Win32 bits the windowing library does not expose: whole-window alpha and staying on top.
+#[cfg(windows)]
+mod win {
+    use std::time::{Duration, Instant};
+    extern "system" {
+        fn FindWindowW(class: *const u16, title: *const u16) -> isize;
+        fn GetWindowLongPtrW(h: isize, i: i32) -> isize;
+        fn SetWindowLongPtrW(h: isize, i: i32, v: isize) -> isize;
+        fn SetLayeredWindowAttributes(h: isize, key: u32, alpha: u8, flags: u32) -> i32;
+        fn SetWindowPos(h: isize, after: isize, x: i32, y: i32, cx: i32, cy: i32, flags: u32) -> i32;
+        fn QueryDosDeviceW(name: *const u16, out: *mut u16, max: u32) -> u32;
+    }
+
+    /// "K:" -> "\Device\Volume{...}", the target the drive letter points to.
+    pub fn dos_device(letter: &str) -> Option<String> {
+        let name: Vec<u16> = letter.encode_utf16().chain(Some(0)).collect();
+        let mut buf = vec![0u16; 1024];
+        let n = unsafe { QueryDosDeviceW(name.as_ptr(), buf.as_mut_ptr(), buf.len() as u32) };
+        if n == 0 {
+            return None;
+        }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(0);
+        Some(String::from_utf16_lossy(&buf[..end]))
+    }
+    const GWL_EXSTYLE: i32 = -20;
+    const WS_EX_LAYERED: isize = 0x0008_0000;
+    const WS_EX_TRANSPARENT: isize = 0x0000_0020; // clicks go through
+    const WS_EX_TOOLWINDOW: isize = 0x0000_0080; // no taskbar / Alt+Tab entry
+    const WS_EX_NOACTIVATE: isize = 0x0800_0000;
+    const WS_EX_TOPMOST: isize = 0x0000_0008;
+    const LWA_ALPHA: u32 = 2;
+    const HWND_TOPMOST: isize = -1;
+    const SWP_NOSIZE: u32 = 1;
+    const SWP_NOMOVE: u32 = 2;
+    const SWP_NOACTIVATE: u32 = 0x10;
+
+    pub fn apply(hwnd: &mut isize, alpha: u8, last_alpha: &mut i32, last_top: &mut Option<Instant>) {
+        unsafe {
+            if *hwnd == 0 {
+                let title: Vec<u16> = "StreamFS overlay".encode_utf16().chain(Some(0)).collect();
+                *hwnd = FindWindowW(std::ptr::null(), title.as_ptr());
+                if *hwnd == 0 {
+                    return;
+                }
+                let ex = GetWindowLongPtrW(*hwnd, GWL_EXSTYLE);
+                SetWindowLongPtrW(*hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST);
+                *last_alpha = -1;
+            }
+            if *last_alpha != alpha as i32 {
+                SetLayeredWindowAttributes(*hwnd, 0, alpha, LWA_ALPHA);
+                *last_alpha = alpha as i32;
+            }
+            // games that switch modes can push other windows down: re-assert every 2 s
+            if last_top.map_or(true, |t| t.elapsed() > Duration::from_secs(2)) {
+                SetWindowPos(*hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+                *last_top = Some(Instant::now());
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod win {
+    pub fn apply(_: &mut isize, _: u8, _: &mut i32, _: &mut Option<std::time::Instant>) {}
+    pub fn dos_device(_: &str) -> Option<String> {
+        None
+    }
 }
