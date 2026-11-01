@@ -375,3 +375,9 @@ Reads by size (filesystem level):
 3. Tail: hedge delay 3 s is above p99 (2.5 s). Hedging small urgent reads at ~1-1.5 s (within the 5% cap) targets the 2.5-4.6 s waits.
 Low impact here: large reads (>= 1 MiB = 2.5% of wait), compression (bytes are not the bottleneck; zstd 3 to be A/B'd separately), VPS disk/CPU, scheduler queueing.
 Speculation efficiency is still low: 458 MB speculative, 88 MB of it used (19%).
+
+## Read log + trace replay (2026-10-31, build run5) and min_fetch 256 vs 512 KiB
+- run5 writes every filesystem read to <cache>/traces/reads-<unix>.log (crates/core/src/readlog.rs). Session 5 (21:47-21:53, different route from s4): 142,062 reads, 283 blocked, 112.5 s waited (union 110.6 s). Blocked reads come in chains: 185/282 start < 50 ms after the previous one finished (median gap 17 ms); 43% hit the same file as the previous miss, 28% within 4 MiB.
+- trace-replay (crates/sim): replays a read log over a simulated link (RTT 220 ms +-40, 3 MB/s per request, 10 MB/s total), serial timing with the original think time (capped 1 s), warm state = cache index snapshot taken before the session. Calibration on s5 with the shipped config (512 KiB): blocked 254/28 (load/play) vs real 255/28; wait 129 s vs real 111 s (sim ~17% pessimistic). Usable for ranking variants.
+- min_fetch 256 vs 512 KiB (s5, warm): 256 -> +23% blocked reads in loading (313 vs 254), p50 339 vs 420 ms, total wait 123.5 vs 129.3 s (-4.5%, single run, within noise). Not adopted.
+- Finding: in replay, read-ahead/speculative traffic is almost all unused (697-1045 MB speculative, 6-7 MB used); live s4 had 19% used. First thing to revisit if prefetch work resumes.

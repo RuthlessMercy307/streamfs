@@ -192,6 +192,7 @@ async fn main() {
     let mut res: Vec<(bool, u64, bool)> = Vec::with_capacity(reads.len());
     let mut orig = [(0u64, 0u64); 2]; // (blocked reads, wait us) in the original, [play, load]
     let mut pending: Vec<tokio::task::JoinHandle<(bool, u64, bool)>> = Vec::new();
+    let mut owed = Duration::ZERO;
     for r in &reads {
         let load = is_load(r);
         if r.len >= skip_large {
@@ -216,7 +217,14 @@ async fn main() {
             for p in pending.drain(..) {
                 res.push(p.await.unwrap());
             }
-            tokio::time::sleep(Duration::from_micros(think as u64).min(think_cap)).await;
+            // Windows timers tick at ~15 ms: sleeping for each tiny gap would stretch the run
+            // by minutes. Gaps are accumulated and slept once they are worth a timer tick.
+            owed += Duration::from_micros(think as u64).min(think_cap);
+            if owed >= Duration::from_millis(20) {
+                let t = Instant::now();
+                tokio::time::sleep(owed).await;
+                owed = owed.saturating_sub(t.elapsed());
+            }
             res.push(job.await);
         } else {
             pending.push(tokio::spawn(job));
