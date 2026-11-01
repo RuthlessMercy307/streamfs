@@ -177,6 +177,8 @@ pub struct SfsFs {
     ttl: Duration,
     now: u64,
     pub cow: Arc<CowStats>,
+    /// Last (total, free) reported by the remote; (0, 0) until the first answer.
+    remote_space: Arc<(AtomicU64, AtomicU64)>,
 }
 
 impl SfsFs {
@@ -188,6 +190,18 @@ impl SfsFs {
         overlay: Option<Overlay>,
         cow_max_bytes: u64,
     ) -> Self {
+        // Explorer asks for volume info often; answer from a value refreshed in the background.
+        let remote_space = Arc::new((AtomicU64::new(0), AtomicU64::new(0)));
+        let (sp, backend) = (remote_space.clone(), eng.backend().clone());
+        rt.spawn(async move {
+            loop {
+                if let Ok(Some((total, free))) = backend.space().await {
+                    sp.0.store(total, Relaxed);
+                    sp.1.store(free, Relaxed);
+                }
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            }
+        });
         SfsFs {
             eng,
             rt,
@@ -197,6 +211,7 @@ impl SfsFs {
             ttl: dir_ttl,
             now: filetime(SystemTime::now()),
             cow: Arc::new(CowStats::default()),
+            remote_space,
         }
     }
 
@@ -943,18 +958,15 @@ impl FileSystemContext for SfsFs {
     }
 
     fn get_volume_info(&self, out: &mut VolumeInfo) -> winfsp::Result<()> {
-        // Honest free space: new data currently lands in the local overlay, so the
-        // local disk holding it is the real limit (not the remote quota).
-        match self.ov.as_ref().and_then(|ov| disk_space(ov.root())) {
-            Some((total, free)) => {
-                out.total_size = total;
-                out.free_size = free;
-            }
-            None => {
-                out.total_size = 1 << 40;
-                out.free_size = 0;
-            }
-        }
+        // Show the remote storage (what the files live on) when it reports it; otherwise
+        // the local disk holding the write overlay.
+        let remote = (self.remote_space.0.load(Relaxed), self.remote_space.1.load(Relaxed));
+        let (total, free) = match remote {
+            (t, f) if t > 0 => (t, f),
+            _ => self.ov.as_ref().and_then(|ov| disk_space(ov.root())).unwrap_or((1 << 40, 0)),
+        };
+        out.total_size = total;
+        out.free_size = free;
         out.set_volume_label("streamfs");
         Ok(())
     }

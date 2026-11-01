@@ -58,4 +58,8 @@ pub trait Backend: Send + Sync + 'static {
     async fn read_range_class(&self, meta: &FileMeta, offset: u64, len: u64, _urgent: bool) -> Result<Bytes> {
         self.read_range(meta, offset, len).await
     }
+    /// (total, free) bytes of the remote storage, if the provider reports it.
+    async fn space(&self) -> Result<Option<(u64, u64)>> {
+        Ok(None)
+    }
 }

@@ -294,6 +294,11 @@ impl Backend for HttpStore {
         "http"
     }
 
+    async fn space(&self) -> Result<Option<(u64, u64)>> {
+        let v: serde_json::Value = self.send(self.http.get(self.url(&["v1", "space"], ""))).await?.json().await.map_err(|e| fatal(e.to_string()))?;
+        Ok(v["total"].as_u64().zip(v["free"].as_u64()).filter(|&(t, _)| t > 0))
+    }
+
     async fn stat(&self, path: &str) -> Result<FileMeta> {
         let p = norm(path);
         let s: StatResp = self.send(self.http.get(self.url(&["v1", "stat", ""], &self.remote(&p)))).await?.json().await.map_err(|e| fatal(e.to_string()))?;
