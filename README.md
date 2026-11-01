@@ -103,4 +103,6 @@ El detalle de cada medición está en [docs/DEVLOG.md](docs/DEVLOG.md).
 
 ## Licencia
 
-MIT. Ver [LICENSE](LICENSE).
+El código de este repositorio es MIT. Ver [LICENSE](LICENSE).
+
+**Importante:** `sfs-mount` (y `sfs-volmount`) enlazan con [winfsp-rs](https://github.com/SnowflakePowered/winfsp-rs), que es **GPL-3.0**, y usan [WinFsp](https://winfsp.dev/) (GPLv3 con excepción FLOSS). Por eso, si distribuyes **binarios** compilados de `sfs-mount`, esos binarios quedan sujetos a la GPL-3.0: tienes que ofrecer también el código fuente. El resto de componentes (`sfs-server`, `sfs-core`, `sfs-overlay`, etc.) no dependen de WinFsp.
