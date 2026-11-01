@@ -1,0 +1,8 @@
+[build]
+target-dir = "C:/dev/sfs-target"
+
+[env]
+LIBCLANG_PATH = "C:/Program Files/LLVM/bin"
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust-lld"

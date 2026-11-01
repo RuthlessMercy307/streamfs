@@ -1,0 +1,17 @@
+[package]
+name = "sfs-volume"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sfs-core = { path = "../core" }
+tokio.workspace = true
+bytes.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crc32fast.workspace = true
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
+[dev-dependencies]
+sfs-sim = { path = "../sim" }

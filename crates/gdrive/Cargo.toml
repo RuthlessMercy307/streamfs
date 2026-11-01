@@ -1,0 +1,32 @@
+[package]
+name = "sfs-gdrive"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sfs-core = { path = "../core" }
+tokio.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "http2"] }
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+url = "2"
+md-5 = "0.10"
+keyring = { version = "3", features = ["windows-native"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+sfs-sim = { path = "../sim" }
+
+[[bin]]
+name = "sfs-auth"
+path = "src/bin/sfs-auth.rs"
+
+[[bin]]
+name = "drive-probe"
+path = "src/bin/drive-probe.rs"

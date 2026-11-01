@@ -1,0 +1,11 @@
+[package]
+name = "sfs-codec"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-decode", "safe-encode"] }
+zstd = { version = "0.13", default-features = false }
+crc32fast.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true

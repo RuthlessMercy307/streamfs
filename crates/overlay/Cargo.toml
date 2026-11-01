@@ -1,0 +1,10 @@
+[package]
+name = "sfs-overlay"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+eframe = { version = "0.29", default-features = false, features = ["glow", "default_fonts"] }
+global-hotkey = "0.6"
+sysinfo = { version = "0.32", default-features = false, features = ["system", "disk"] }
+serde_json.workspace = true

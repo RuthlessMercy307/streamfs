@@ -1,0 +1,27 @@
+[package]
+name = "sfs-mount"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sfs-core = { path = "../core" }
+sfs-sim = { path = "../sim" }
+sfs-gdrive = { path = "../gdrive" }
+sfs-volume = { path = "../volume" }
+sfs-http = { path = "../http" }
+winfsp = "0.13"
+tokio = { workspace = true, features = ["signal"] }
+serde_json.workspace = true
+parking_lot.workspace = true
+windows-sys = { version = "0.59", features = ["Win32_Storage_FileSystem"] }
+
+[build-dependencies]
+winfsp = "0.13"
+
+[[bin]]
+name = "sfs-mount"
+path = "src/main.rs"
+
+[[bin]]
+name = "sfs-volmount"
+path = "src/bin/sfs-volmount.rs"

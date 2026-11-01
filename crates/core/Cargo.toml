@@ -1,0 +1,15 @@
+[package]
+name = "sfs-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+thiserror.workspace = true
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+crc32fast.workspace = true
+hdrhistogram.workspace = true

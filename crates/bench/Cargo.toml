@@ -1,0 +1,18 @@
+[package]
+name = "sfs-bench"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sfs-core = { path = "../core" }
+sfs-sim = { path = "../sim" }
+tokio.workspace = true
+serde_json.workspace = true
+
+[[bin]]
+name = "sfs-bench"
+path = "src/main.rs"
+
+[[bin]]
+name = "mount-bench"
+path = "src/bin/mount-bench.rs"

@@ -1,0 +1,28 @@
+[package]
+name = "sfs-http"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+sfs-core = { path = "../core" }
+tokio.workspace = true
+async-trait.workspace = true
+bytes.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+url = "2"
+md-5 = "0.10"
+sfs-codec = { path = "../codec" }
+
+[[bin]]
+name = "http-probe"
+path = "src/bin/http-probe.rs"
+
+[[bin]]
+name = "http-verify"
+path = "src/bin/http-verify.rs"
+
+[[bin]]
+name = "engine-bench"
+path = "src/bin/engine-bench.rs"
