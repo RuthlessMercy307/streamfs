@@ -268,7 +268,15 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "StreamFS overlay",
         opts,
-        Box::new(move |_cc| {
+        Box::new(move |cc| {
+            // A click-through window that never gets input is not reliably woken by
+            // request_repaint_after on Windows (the panel froze with stale numbers):
+            // a ticker thread wakes the event loop every 500 ms instead.
+            let ctx = cc.egui_ctx.clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_millis(500));
+                ctx.request_repaint();
+            });
             Ok(Box::new(App {
                 stats,
                 drive,
